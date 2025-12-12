@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useBudgetSimulator } from '@/hooks/useBudgetSimulator';
+import { LanguageProvider } from '@/i18n/LanguageContext';
+import { LanguageSelector } from '@/components/LanguageSelector';
 import { Dashboard } from '@/components/Dashboard';
 import { BudgetAllocation } from '@/components/BudgetAllocation';
 import { ScenarioSimulation } from '@/components/ScenarioSimulation';
@@ -11,7 +13,7 @@ import { toast } from 'sonner';
 
 type TabId = 'dashboard' | 'budget' | 'scenarios' | 'results' | 'advisor';
 
-const Index = () => {
+function BudgetSimulatorApp() {
   const [activeTab, setActiveTab] = useState<TabId>('dashboard');
   const {
     state,
@@ -87,21 +89,44 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background tg-viewport">
-      {/* Background Glow Effect */}
+      {/* Background Effects */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[500px] h-[500px] bg-gradient-radial from-primary/10 via-transparent to-transparent opacity-50" />
+        <div className="absolute inset-0 bg-gradient-mesh" />
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-gradient-radial from-primary/8 via-transparent to-transparent opacity-60" />
       </div>
 
+      {/* Header with Language Selector */}
+      <header className="relative z-20 flex justify-end p-4">
+        <LanguageSelector />
+      </header>
+
       {/* Main Content */}
-      <main className="relative z-10 px-4 pt-6 pb-24 max-w-lg mx-auto">
+      <main className="relative z-10 px-4 pb-24 max-w-lg mx-auto">
         {renderContent()}
       </main>
 
       {/* Navigation */}
       <Navigation activeTab={activeTab} onTabChange={handleTabChange} />
       
-      <Toaster position="top-center" />
+      <Toaster 
+        position="top-center" 
+        toastOptions={{
+          style: {
+            background: 'hsl(220 25% 10%)',
+            border: '1px solid hsl(220 20% 20%)',
+            color: 'hsl(210 40% 98%)',
+          },
+        }}
+      />
     </div>
+  );
+}
+
+const Index = () => {
+  return (
+    <LanguageProvider>
+      <BudgetSimulatorApp />
+    </LanguageProvider>
   );
 };
 
