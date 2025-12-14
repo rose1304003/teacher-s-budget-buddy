@@ -13,6 +13,13 @@ import httpx
 import json
 from dotenv import load_dotenv
 
+# Google Gemini imports
+try:
+    from google import genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+
 # Load environment variables
 load_dotenv()
 
@@ -215,69 +222,68 @@ async def stream_ai_response(request: ChatRequest):
     
     # Choose AI service
     if USE_GEMINI and GEMINI_API_KEY:
-        # Use Google Gemini
-        api_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:streamGenerateContent"
-        api_key = GEMINI_API_KEY
-        # Transform messages to Gemini format
-        gemini_messages = []
-        for msg in messages:
-            if msg["role"] == "system":
-                # Gemini doesn't have system role, prepend to first user message
-                continue
-            gemini_messages.append({"role": msg["role"], "parts": [{"text": msg["content"]}]})
+        # Use Google Gemini with official SDK
+        if not GEMINI_AVAILABLE:
+            raise HTTPException(status_code=500, detail="google-genai package not installed. Run: pip install google-genai")
         
-        # Add system prompt to first message
-        if messages[0]["role"] == "system":
-            gemini_messages[0]["parts"][0]["text"] = messages[0]["content"] + "\n\n" + gemini_messages[0]["parts"][0]["text"]
-        
-        payload = {
-            "contents": gemini_messages,
-            "generationConfig": {
-                "temperature": 0.7,
-            }
-        }
-        headers = {
-            "Content-Type": "application/json",
-        }
-        request_url = f"{api_url}?key={api_key}"
-        
-        # Gemini streaming is different, need to handle SSE conversion
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            try:
-                response = await client.post(request_url, headers=headers, json=payload)
-                if not response.is_success:
-                    error_text = await response.aread()
-                    logger.error(f"Gemini API error: {response.status_code} - {error_text}")
-                    raise HTTPException(status_code=response.status_code, detail=f"Gemini API error: {response.status_code}")
-                
-                # Convert Gemini response to OpenAI SSE format
-                data = response.json()
-                async def generate():
-                    for candidate in data.get("candidates", []):
-                        for part in candidate.get("content", {}).get("parts", []):
-                            text = part.get("text", "")
-                            if text:
-                                # Stream character by character for smooth effect
-                                for char in text:
-                                    chunk = {
-                                        "choices": [{
-                                            "delta": {"content": char}
-                                        }]
-                                    }
-                                    yield f"data: {json.dumps(chunk)}\n\n"
+        try:
+            # Initialize Gemini client
+            client = genai.Client(api_key=GEMINI_API_KEY)
+            
+            # Combine system prompt and user message
+            system_prompt = messages[0]["content"] if messages[0]["role"] == "system" else ""
+            user_message = messages[-1]["content"] if messages[-1]["role"] == "user" else request.message
+            
+            # Prepare content (system prompt + user message)
+            content = f"{system_prompt}\n\n{user_message}" if system_prompt else user_message
+            
+            # Generate response with streaming (using async interface)
+            async def generate():
+                try:
+                    # Use async interface for FastAPI compatibility
+                    stream = await client.aio.models.generate_content_stream(
+                        model="gemini-2.5-flash",
+                        contents=content,
+                        config={
+                            "temperature": 0.7,
+                        }
+                    )
+                    
+                    # Stream response chunks
+                    async for chunk in stream:
+                        if hasattr(chunk, 'text') and chunk.text:
+                            # Convert to OpenAI SSE format
+                            chunk_data = {
+                                "choices": [{
+                                    "delta": {"content": chunk.text}
+                                }]
+                            }
+                            yield f"data: {json.dumps(chunk_data)}\n\n"
+                    
+                    # End of stream
                     yield "data: [DONE]\n\n"
-                
-                return StreamingResponse(
-                    generate(),
-                    media_type="text/event-stream",
-                    headers={
-                        "Cache-Control": "no-cache",
-                        "Connection": "keep-alive",
+                except Exception as e:
+                    logger.error(f"Error in Gemini streaming: {e}")
+                    error_chunk = {
+                        "choices": [{
+                            "delta": {"content": f"\n\nError: {str(e)}"}
+                        }]
                     }
-                )
-            except Exception as e:
-                logger.error(f"Error calling Gemini API: {e}")
-                raise HTTPException(status_code=500, detail=str(e))
+                    yield f"data: {json.dumps(error_chunk)}\n\n"
+                    yield "data: [DONE]\n\n"
+            
+            return StreamingResponse(
+                generate(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Error calling Gemini API: {e}")
+            raise HTTPException(status_code=500, detail=f"Gemini API error: {str(e)}")
     else:
         # Use OpenAI
         if not OPENAI_API_KEY:
