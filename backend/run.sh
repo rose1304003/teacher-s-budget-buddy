@@ -22,3 +22,10 @@ BOT_PID=$!
 # Wait for user interrupt
 echo "Both services are running. Press Ctrl+C to stop."
 wait $API_PID $BOT_PID
+
+#!/usr/bin/env sh
+set -e
+
+echo "Starting with PORT=${PORT}"
+exec uvicorn backend.api:app --host 0.0.0.0 --port "${PORT}"
+
