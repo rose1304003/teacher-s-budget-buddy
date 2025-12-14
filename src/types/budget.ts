@@ -38,6 +38,28 @@ export interface MonthlyResult {
   stressLevel: number;
 }
 
+export interface BudgetRestrictions {
+  dailyLimit?: number;
+  dailySpent: number;
+  monthlyCap?: number;
+  monthlySpent: number;
+  categoryLimits?: Record<string, number>; // categoryId -> limit
+  categorySpent?: Record<string, number>; // categoryId -> spent
+  warnAtPercent: number; // Default 80
+}
+
+export interface FinancialProfile {
+  monthlyIncome: number;
+  existingSavings: number;
+  totalDebt: number;
+  recurringExpenses: Array<{
+    id: string;
+    name: string;
+    amount: number;
+    category: string;
+  }>;
+}
+
 export interface UserState {
   virtualIncome: number;
   currentBalance: number;
@@ -47,6 +69,8 @@ export interface UserState {
   stressLevel: number;
   month: number;
   categories: BudgetCategory[];
+  restrictions?: BudgetRestrictions;
+  financialProfile?: FinancialProfile;
 }
 
 export interface AIMessage {

@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { BudgetCategory, UserState, Scenario, ScenarioOption, MonthlyResult } from '@/types/budget';
+import { BudgetCategory, UserState, Scenario, ScenarioOption, MonthlyResult, FinancialProfile, BudgetRestrictions } from '@/types/budget';
 
 const initialCategories: BudgetCategory[] = [
   { id: 'food', name: 'Food & Groceries', icon: '🍎', allocated: 0, recommended: { min: 15, max: 25 }, color: 'hsl(142 76% 36%)' },
@@ -111,6 +111,89 @@ export function useBudgetSimulator() {
   const [currentScenario, setCurrentScenario] = useState<Scenario | null>(null);
   const [monthlyResults, setMonthlyResults] = useState<MonthlyResult[]>([]);
 
+  const setFinancialProfile = useCallback((profile: FinancialProfile) => {
+    setState((prev) => ({
+      ...prev,
+      virtualIncome: profile.monthlyIncome,
+      currentBalance: profile.monthlyIncome,
+      savings: profile.existingSavings,
+      debt: profile.totalDebt,
+      financialProfile: profile,
+    }));
+  }, []);
+
+  const setBudgetRestrictions = useCallback((restrictions: BudgetRestrictions) => {
+    setState((prev) => ({
+      ...prev,
+      restrictions: {
+        ...restrictions,
+        dailySpent: 0,
+        monthlySpent: 0,
+        categorySpent: {},
+      },
+    }));
+  }, []);
+
+  const checkBudgetRestrictions = useCallback((amount: number, categoryId?: string): { allowed: boolean; reason?: string } => {
+    const restrictions = state.restrictions;
+    if (!restrictions) return { allowed: true };
+
+    // Check monthly cap
+    if (restrictions.monthlyCap && restrictions.monthlySpent + amount > restrictions.monthlyCap) {
+      return { allowed: false, reason: 'monthlyCap' };
+    }
+
+    // Check daily limit
+    if (restrictions.dailyLimit && restrictions.dailySpent + amount > restrictions.dailyLimit) {
+      return { allowed: false, reason: 'dailyLimit' };
+    }
+
+    // Check category limit
+    if (categoryId && restrictions.categoryLimits?.[categoryId]) {
+      const categorySpent = restrictions.categorySpent?.[categoryId] || 0;
+      if (categorySpent + amount > restrictions.categoryLimits[categoryId]) {
+        return { allowed: false, reason: 'categoryLimit' };
+      }
+    }
+
+    return { allowed: true };
+  }, [state.restrictions]);
+
+  const recordSpending = useCallback((amount: number, categoryId?: string) => {
+    setState((prev) => {
+      if (!prev.restrictions) return prev;
+
+      const newRestrictions = { ...prev.restrictions };
+      newRestrictions.monthlySpent = (newRestrictions.monthlySpent || 0) + amount;
+      newRestrictions.dailySpent = (newRestrictions.dailySpent || 0) + amount;
+
+      if (categoryId) {
+        newRestrictions.categorySpent = {
+          ...newRestrictions.categorySpent,
+          [categoryId]: (newRestrictions.categorySpent?.[categoryId] || 0) + amount,
+        };
+      }
+
+      return {
+        ...prev,
+        restrictions: newRestrictions,
+      };
+    });
+  }, []);
+
+  const resetDailySpending = useCallback(() => {
+    setState((prev) => {
+      if (!prev.restrictions) return prev;
+      return {
+        ...prev,
+        restrictions: {
+          ...prev.restrictions,
+          dailySpent: 0,
+        },
+      };
+    });
+  }, []);
+
   const updateCategory = useCallback((categoryId: string, value: number) => {
     setState(prev => ({
       ...prev,
@@ -194,5 +277,10 @@ export function useBudgetSimulator() {
     handleScenarioChoice,
     endMonth,
     resetSimulation,
+    setFinancialProfile,
+    setBudgetRestrictions,
+    checkBudgetRestrictions,
+    recordSpending,
+    resetDailySpending,
   };
 }

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { UserState } from '@/types/budget';
-import { Bot, Send, Sparkles, Lightbulb, TrendingUp, Shield, Loader2, Trash2 } from 'lucide-react';
+import { Bot, Send, Sparkles, Lightbulb, TrendingUp, Shield, Loader2, Trash2, Wallet } from 'lucide-react';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { useAIChat } from '@/hooks/useAIChat';
 
@@ -17,9 +17,10 @@ export function AIAdvisor({ state }: AIAdvisorProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   const quickPrompts = [
-    { icon: Lightbulb, label: t.ai.savingTips },
-    { icon: TrendingUp, label: t.ai.improveStability },
-    { icon: Shield, label: t.ai.reduceStress },
+    { icon: Lightbulb, label: t.ai.savingTips, prompt: t.ai.savingTips },
+    { icon: TrendingUp, label: t.ai.improveStability, prompt: t.ai.improveStability },
+    { icon: Shield, label: t.ai.reduceStress, prompt: t.ai.reduceStress },
+    { icon: Wallet, label: t.ai.trackExpenses || 'Track expenses', prompt: language === 'ru' ? 'Помоги отследить мои расходы' : language === 'uz' ? 'Xarajatlarimni kuzatishda yordam bering' : 'Help me track my expenses' },
   ];
 
   // Auto-scroll to bottom when new messages arrive
@@ -30,12 +31,8 @@ export function AIAdvisor({ state }: AIAdvisorProps) {
   // Send greeting message on first load
   useEffect(() => {
     if (messages.length === 0) {
-      const greetingPrompt = language === 'ru' 
-        ? 'Привет! Расскажи мне о моём текущем финансовом положении и дай совет.'
-        : language === 'uz'
-        ? "Salom! Menga joriy moliyaviy holatim haqida gapirib bering va maslahat bering."
-        : "Hello! Tell me about my current financial situation and give me some advice.";
-      sendMessage(greetingPrompt);
+      // Don't send greeting automatically - let user start conversation
+      // The greeting will be shown in the UI instead
     }
   }, []);
 
@@ -67,6 +64,23 @@ export function AIAdvisor({ state }: AIAdvisorProps) {
 
       {/* Chat Messages */}
       <div className="flex-1 overflow-y-auto space-y-4 pb-4">
+        {messages.length === 0 && (
+          <div className="flex justify-start animate-fade-in">
+            <div className="max-w-[85%]">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-8 h-8 rounded-xl bg-gradient-primary flex items-center justify-center shadow-glow">
+                  <Bot className="w-4 h-4 text-primary-foreground" />
+                </div>
+                <span className="text-xs text-muted-foreground font-medium">{t.ai.title}</span>
+              </div>
+              <div className="glass-card rounded-2xl rounded-tl-md px-4 py-3">
+                <p className="text-sm whitespace-pre-line leading-relaxed">
+                  {t.ai.greeting}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
         {messages.map((message, index) => (
           <div
             key={message.id}
@@ -116,7 +130,7 @@ export function AIAdvisor({ state }: AIAdvisorProps) {
             key={i}
             onClick={() => {
               if (!isLoading) {
-                sendMessage(prompt.label);
+                sendMessage(prompt.prompt || prompt.label);
               }
             }}
             disabled={isLoading}

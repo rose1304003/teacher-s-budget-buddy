@@ -8,10 +8,12 @@ import { ScenarioSimulation } from '@/components/ScenarioSimulation';
 import { MonthlyResults } from '@/components/MonthlyResults';
 import { AIAdvisor } from '@/components/AIAdvisor';
 import { Navigation } from '@/components/Navigation';
+import { FinancialProfile } from '@/components/FinancialProfile';
+import { BudgetRestrictions } from '@/components/BudgetRestrictions';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
 
-type TabId = 'dashboard' | 'budget' | 'scenarios' | 'results' | 'advisor';
+type TabId = 'dashboard' | 'budget' | 'scenarios' | 'results' | 'advisor' | 'profile' | 'restrictions';
 
 function BudgetSimulatorApp() {
   const [activeTab, setActiveTab] = useState<TabId>('dashboard');
@@ -26,10 +28,38 @@ function BudgetSimulatorApp() {
     handleScenarioChoice,
     endMonth,
     resetSimulation,
+    setFinancialProfile,
+    setBudgetRestrictions,
   } = useBudgetSimulator();
 
   const handleTabChange = (tab: TabId) => {
     setActiveTab(tab);
+  };
+
+  const handleProfileComplete = (profile: any) => {
+    const isFirstTime = !state.financialProfile;
+    setFinancialProfile(profile);
+    
+    if (isFirstTime) {
+      toast.success('Profile saved! Now set your budget restrictions.');
+      setActiveTab('restrictions');
+    } else {
+      toast.success('Profile updated successfully!');
+      setActiveTab('dashboard');
+    }
+  };
+
+  const handleRestrictionsComplete = (restrictions: any) => {
+    const isFirstTime = !state.restrictions;
+    setBudgetRestrictions(restrictions);
+    
+    if (isFirstTime) {
+      toast.success('Budget restrictions set! Ready to start.');
+      setActiveTab('dashboard');
+    } else {
+      toast.success('Budget restrictions updated!');
+      setActiveTab('dashboard');
+    }
   };
 
   const handleBudgetComplete = () => {
@@ -43,9 +73,49 @@ function BudgetSimulatorApp() {
   };
 
   const renderContent = () => {
+    // Show profile setup only on first load if not completed
+    if (!state.financialProfile && activeTab === 'dashboard') {
+      return (
+        <FinancialProfile
+          onComplete={handleProfileComplete}
+          initialProfile={state.financialProfile}
+        />
+      );
+    }
+
+    // Show restrictions setup if profile done but restrictions not (only on first load)
+    if (state.financialProfile && !state.restrictions && activeTab === 'dashboard') {
+      return (
+        <BudgetRestrictions
+          onComplete={handleRestrictionsComplete}
+          initialRestrictions={state.restrictions}
+          categories={state.categories}
+          monthlyIncome={state.virtualIncome}
+        />
+      );
+    }
+
     switch (activeTab) {
+      case 'profile':
+        return (
+          <FinancialProfile
+            onComplete={handleProfileComplete}
+            initialProfile={state.financialProfile}
+            onEditRestrictions={() => setActiveTab('restrictions')}
+          />
+        );
+      case 'restrictions':
+        return (
+          <BudgetRestrictions
+            onComplete={handleRestrictionsComplete}
+            initialRestrictions={state.restrictions}
+            categories={state.categories}
+            monthlyIncome={state.virtualIncome}
+            onBackToProfile={state.financialProfile ? () => setActiveTab('profile') : undefined}
+          />
+        );
       case 'dashboard':
-        return <Dashboard state={state} />;
+        return <Dashboard state={state} onOpenSettings={() => setActiveTab('profile')} />;
       case 'budget':
         return (
           <BudgetAllocation
@@ -76,7 +146,7 @@ function BudgetSimulatorApp() {
             onReset={() => {
               resetSimulation();
               toast.info('Simulation reset. Starting fresh!');
-              setActiveTab('dashboard');
+              setActiveTab('profile');
             }}
           />
         );
@@ -105,8 +175,10 @@ function BudgetSimulatorApp() {
         {renderContent()}
       </main>
 
-      {/* Navigation */}
-      <Navigation activeTab={activeTab} onTabChange={handleTabChange} />
+      {/* Navigation - Only show for main app tabs, allow profile when editing */}
+      {activeTab !== 'restrictions' && (
+        <Navigation activeTab={activeTab} onTabChange={handleTabChange} />
+      )}
       
       <Toaster 
         position="top-center" 

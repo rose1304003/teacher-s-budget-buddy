@@ -2,7 +2,14 @@ import { useState, useCallback } from 'react';
 import { UserState } from '@/types/budget';
 import { Language } from '@/i18n/translations';
 
-const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/financial-advisor`;
+// Support both Supabase Edge Function and Python API
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const API_URL = import.meta.env.VITE_API_URL;
+const CHAT_URL = API_URL 
+  ? `${API_URL}/api/financial-advisor`
+  : SUPABASE_URL
+  ? `${SUPABASE_URL}/functions/v1/financial-advisor`
+  : '/api/financial-advisor'; // Fallback
 
 export interface ChatMessage {
   id: string;
@@ -47,12 +54,18 @@ export function useAIChat(userState: UserState, language: Language) {
     };
 
     try {
+      const headers: HeadersInit = {
+        "Content-Type": "application/json",
+      };
+      
+      // Only add Supabase auth header if using Supabase
+      if (SUPABASE_URL && !API_URL) {
+        headers.Authorization = `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`;
+      }
+      
       const resp = await fetch(CHAT_URL, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-        },
+        headers,
         body: JSON.stringify({
           message: content,
           language,

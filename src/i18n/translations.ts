@@ -22,6 +22,7 @@ export interface Translations {
     stressResistance: string;
     educationalNote: string;
     educationalDesc: string;
+    settings: string;
   };
   // Budget
   budget: {
@@ -73,10 +74,11 @@ export interface Translations {
     title: string;
     subtitle: string;
     greeting: string;
-    savingTips: string;
-    improveStability: string;
-    reduceStress: string;
-    placeholder: string;
+      savingTips: string;
+      improveStability: string;
+      reduceStress: string;
+      trackExpenses: string;
+      placeholder: string;
     disclaimer: string;
     thinking: string;
   };
@@ -99,6 +101,42 @@ export interface Translations {
     savings: string;
     debt: string;
     currency: string;
+  };
+  // Financial Profile
+  financialProfile: {
+    title: string;
+    subtitle: string;
+    editSubtitle: string;
+    monthlyIncome: string;
+    incomeDesc: string;
+    existingSavings: string;
+    savingsDesc: string;
+    totalDebt: string;
+    debtDesc: string;
+    recurringExpenses: string;
+    recurringDesc: string;
+    expenseNamePlaceholder: string;
+    amountPlaceholder: string;
+    saveProfile: string;
+    updateProfile: string;
+    editRestrictions: string;
+  };
+  // Budget Restrictions
+  restrictions: {
+    title: string;
+    subtitle: string;
+    dailyLimit: string;
+    dailyLimitDesc: string;
+    monthlyCap: string;
+    monthlyCapDesc: string;
+    categoryLimits: string;
+    categoryLimitsDesc: string;
+    warnAtPercent: string;
+    warnAtPercentDesc: string;
+    saveSettings: string;
+    limitReached: string;
+    limitWarning: string;
+    spendingBlocked: string;
   };
 }
 
@@ -123,6 +161,7 @@ export const translations: Record<Language, Translations> = {
       stressResistance: 'Stress Resistance',
       educationalNote: 'Educational Simulation',
       educationalDesc: 'All amounts shown are virtual. This simulator helps you practice financial decision-making without real money.',
+      settings: 'Settings',
     },
     budget: {
       title: 'Allocate Budget',
@@ -167,13 +206,14 @@ export const translations: Record<Language, Translations> = {
       resetSimulation: 'Reset Simulation',
     },
     ai: {
-      title: 'AI Advisor',
-      subtitle: 'Your personal financial coach',
-      greeting: "Hello! I'm your AI Financial Advisor. I'm here to help you make smart financial decisions and learn good money habits. How can I help you today?",
+      title: 'Financial Assistant',
+      subtitle: 'Track expenses, set goals, get advice',
+      greeting: "Hello! I'm your personal financial assistant. I'll help you track income and expenses, set goals, and manage your finances. How can I help you today?",
       savingTips: 'Tips for saving',
       improveStability: 'Improve stability',
       reduceStress: 'Reduce stress',
-      placeholder: 'Ask me anything about budgeting...',
+      trackExpenses: 'Track expenses',
+      placeholder: 'Ask anything about your finances...',
       disclaimer: 'AI advice is for educational purposes only',
       thinking: 'Thinking...',
     },
@@ -194,6 +234,40 @@ export const translations: Record<Language, Translations> = {
       savings: 'Savings',
       debt: 'Debt',
       currency: '₸',
+    },
+    financialProfile: {
+      title: 'Financial Profile',
+      subtitle: 'Set up your financial information to get started',
+      editSubtitle: 'Update your financial information',
+      monthlyIncome: 'Monthly Income',
+      incomeDesc: 'Your total monthly income',
+      existingSavings: 'Existing Savings',
+      savingsDesc: 'Current savings balance',
+      totalDebt: 'Total Debt',
+      debtDesc: 'Outstanding loans and debts',
+      recurringExpenses: 'Recurring Expenses',
+      recurringDesc: 'Monthly fixed expenses (rent, subscriptions, etc.)',
+      expenseNamePlaceholder: 'Expense name',
+      amountPlaceholder: 'Amount',
+      saveProfile: 'Save Profile',
+      updateProfile: 'Update Profile',
+      editRestrictions: 'Edit Budget Restrictions',
+    },
+    restrictions: {
+      title: 'Budget Restrictions',
+      subtitle: 'Set spending limits and alerts',
+      dailyLimit: 'Daily Spending Limit',
+      dailyLimitDesc: 'Maximum amount you can spend per day',
+      monthlyCap: 'Monthly Budget Cap',
+      monthlyCapDesc: 'Total spending limit for the month (blocks when exceeded)',
+      categoryLimits: 'Category Limits',
+      categoryLimitsDesc: 'Set maximum spending per category',
+      warnAtPercent: 'Warning Threshold',
+      warnAtPercentDesc: 'Get notified at this percentage of your limit',
+      saveSettings: 'Save Settings',
+      limitReached: 'Limit Reached',
+      limitWarning: 'Warning: You\'ve used {percent}% of your {type} limit',
+      spendingBlocked: 'Spending blocked: {type} limit exceeded',
     },
   },
   ru: {
@@ -216,6 +290,7 @@ export const translations: Record<Language, Translations> = {
       stressResistance: 'Устойчивость к стрессу',
       educationalNote: 'Образовательная симуляция',
       educationalDesc: 'Все суммы виртуальные. Этот симулятор помогает практиковать принятие финансовых решений без реальных денег.',
+      settings: 'Настройки',
     },
     budget: {
       title: 'Распределение бюджета',
@@ -260,13 +335,14 @@ export const translations: Record<Language, Translations> = {
       resetSimulation: 'Сбросить симуляцию',
     },
     ai: {
-      title: 'ИИ Консультант',
-      subtitle: 'Ваш персональный финансовый коуч',
-      greeting: 'Здравствуйте! Я ваш ИИ-консультант по финансам. Я помогу вам принимать умные финансовые решения и формировать хорошие денежные привычки. Чем могу помочь?',
+      title: 'Финансовый Помощник',
+      subtitle: 'Отслеживайте расходы, ставьте цели, получайте советы',
+      greeting: 'Здравствуйте! Я ваш персональный финансовый помощник. Я помогу вам отслеживать доходы и расходы, ставить цели и управлять финансами. Чем могу помочь?',
       savingTips: 'Советы по экономии',
       improveStability: 'Улучшить стабильность',
       reduceStress: 'Снизить стресс',
-      placeholder: 'Спросите меня о бюджете...',
+      trackExpenses: 'Отследить расходы',
+      placeholder: 'Спросите о ваших финансах...',
       disclaimer: 'Советы ИИ носят образовательный характер',
       thinking: 'Думаю...',
     },
@@ -287,6 +363,40 @@ export const translations: Record<Language, Translations> = {
       savings: 'Сбережения',
       debt: 'Долг',
       currency: '₸',
+    },
+    financialProfile: {
+      title: 'Финансовый профиль',
+      subtitle: 'Настройте финансовую информацию для начала',
+      editSubtitle: 'Обновите вашу финансовую информацию',
+      monthlyIncome: 'Месячный доход',
+      incomeDesc: 'Ваш общий месячный доход',
+      existingSavings: 'Существующие сбережения',
+      savingsDesc: 'Текущий баланс сбережений',
+      totalDebt: 'Общий долг',
+      debtDesc: 'Непогашенные кредиты и долги',
+      recurringExpenses: 'Регулярные расходы',
+      recurringDesc: 'Ежемесячные фиксированные расходы (аренда, подписки и т.д.)',
+      expenseNamePlaceholder: 'Название расхода',
+      amountPlaceholder: 'Сумма',
+      saveProfile: 'Сохранить профиль',
+      updateProfile: 'Обновить профиль',
+      editRestrictions: 'Редактировать ограничения бюджета',
+    },
+    restrictions: {
+      title: 'Ограничения бюджета',
+      subtitle: 'Установите лимиты расходов и уведомления',
+      dailyLimit: 'Дневной лимит расходов',
+      dailyLimitDesc: 'Максимальная сумма расходов в день',
+      monthlyCap: 'Месячный лимит бюджета',
+      monthlyCapDesc: 'Общий лимит расходов на месяц (блокирует при превышении)',
+      categoryLimits: 'Лимиты по категориям',
+      categoryLimitsDesc: 'Установите максимальные расходы по категориям',
+      warnAtPercent: 'Порог предупреждения',
+      warnAtPercentDesc: 'Получайте уведомления при достижении этого процента лимита',
+      saveSettings: 'Сохранить настройки',
+      limitReached: 'Лимит достигнут',
+      limitWarning: 'Предупреждение: Вы использовали {percent}% вашего лимита {type}',
+      spendingBlocked: 'Расходы заблокированы: превышен лимит {type}',
     },
   },
   uz: {
@@ -309,6 +419,7 @@ export const translations: Record<Language, Translations> = {
       stressResistance: 'Stressga chidamlilik',
       educationalNote: 'Ta\'limiy simulyatsiya',
       educationalDesc: 'Barcha summalar virtual. Bu simulyator haqiqiy pullarisiz moliyaviy qaror qabul qilishni mashq qilishga yordam beradi.',
+      settings: 'Sozlamalar',
     },
     budget: {
       title: 'Byudjetni taqsimlash',
@@ -353,13 +464,14 @@ export const translations: Record<Language, Translations> = {
       resetSimulation: 'Simulyatsiyani qayta boshlash',
     },
     ai: {
-      title: 'SI Maslahatchi',
-      subtitle: 'Shaxsiy moliyaviy murabbiyingiz',
-      greeting: 'Salom! Men sizning SI moliyaviy maslahatchimanman. Sizga aqlli moliyaviy qarorlar qabul qilishda va yaxshi pul odatlarini shakllantirishda yordam beraman. Bugun sizga qanday yordam bera olaman?',
+      title: 'Moliyaviy Yordamchi',
+      subtitle: 'Xarajatlarni kuzating, maqsadlar qo\'ying, maslahatlar oling',
+      greeting: 'Salom! Men sizning shaxsiy moliyaviy yordamchingizman. Men sizga daromadlar va xarajatlarni kuzatish, maqsadlar qo\'yish va moliyani boshqarishda yordam beraman. Bugun sizga qanday yordam bera olaman?',
       savingTips: 'Tejash maslahatlari',
       improveStability: 'Barqarorlikni yaxshilash',
       reduceStress: 'Stressni kamaytirish',
-      placeholder: 'Byudjet haqida so\'rang...',
+      trackExpenses: 'Xarajatlarni kuzatish',
+      placeholder: 'Moliyangiz haqida so\'rang...',
       disclaimer: 'SI maslahatlari faqat ta\'lim maqsadida',
       thinking: 'O\'ylayapman...',
     },
@@ -380,6 +492,40 @@ export const translations: Record<Language, Translations> = {
       savings: 'Jamg\'armalar',
       debt: 'Qarz',
       currency: 'so\'m',
+    },
+    financialProfile: {
+      title: 'Moliyaviy profil',
+      subtitle: 'Boshlash uchun moliyaviy ma\'lumotlaringizni sozlang',
+      editSubtitle: 'Moliyaviy ma\'lumotlaringizni yangilang',
+      monthlyIncome: 'Oylik daromad',
+      incomeDesc: 'Sizning umumiy oylik daromadingiz',
+      existingSavings: 'Mavjud jamg\'armalar',
+      savingsDesc: 'Joriy jamg\'arma balansi',
+      totalDebt: 'Jami qarz',
+      debtDesc: 'To\'lanmagan kreditlar va qarzlar',
+      recurringExpenses: 'Doimiy xarajatlar',
+      recurringDesc: 'Oylik belgilangan xarajatlar (ijara, obunalar va boshqalar)',
+      expenseNamePlaceholder: 'Xarajat nomi',
+      amountPlaceholder: 'Summa',
+      saveProfile: 'Profilni saqlash',
+      updateProfile: 'Profilni yangilash',
+      editRestrictions: 'Byudjet cheklovlarini tahrirlash',
+    },
+    restrictions: {
+      title: 'Byudjet cheklovlari',
+      subtitle: 'Xarajat limitlari va bildirishnomalarni o\'rnating',
+      dailyLimit: 'Kunlik xarajat limiti',
+      dailyLimitDesc: 'Kuniga maksimal xarajat miqdori',
+      monthlyCap: 'Oylik byudjet limiti',
+      monthlyCapDesc: 'Oy uchun umumiy xarajat limiti (ortib ketganda bloklaydi)',
+      categoryLimits: 'Kategoriya bo\'yicha limitlar',
+      categoryLimitsDesc: 'Kategoriyalar bo\'yicha maksimal xarajatlarni o\'rnating',
+      warnAtPercent: 'Ogohlantirish chegarasi',
+      warnAtPercentDesc: 'Limitning ushbu foiziga yetganda bildirishnoma oling',
+      saveSettings: 'Sozlamalarni saqlash',
+      limitReached: 'Limitga yetildi',
+      limitWarning: 'Ogohlantirish: Siz {type} limitining {percent}% dan foydalandingiz',
+      spendingBlocked: 'Xarajatlar bloklandi: {type} limiti oshib ketdi',
     },
   },
 };

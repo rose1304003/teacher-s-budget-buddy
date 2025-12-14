@@ -1,9 +1,12 @@
 import { useLanguage } from '@/i18n/LanguageContext';
-import { TrendingUp, TrendingDown, Wallet, PiggyBank, CreditCard, Activity, Sparkles } from 'lucide-react';
+import { TrendingUp, TrendingDown, Wallet, PiggyBank, CreditCard, Activity, Sparkles, Settings } from 'lucide-react';
 import { UserState } from '@/types/budget';
+import { BudgetAlerts } from './BudgetAlerts';
+import { Button } from '@/components/ui/button';
 
 interface DashboardProps {
   state: UserState;
+  onOpenSettings?: () => void;
 }
 
 function formatCurrency(value: number, currency: string): string {
@@ -105,18 +108,31 @@ function StabilityMeter({ value, label }: { value: number; label: string }) {
   );
 }
 
-export function Dashboard({ state }: DashboardProps) {
+export function Dashboard({ state, onOpenSettings }: DashboardProps) {
   const { t } = useLanguage();
   const currency = t.common.currency;
 
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="animate-fade-in">
-        <h1 className="text-2xl font-display font-bold gradient-text">{t.dashboard.title}</h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          {t.common.month} {state.month} • {t.dashboard.subtitle}
-        </p>
+      <div className="animate-fade-in flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-display font-bold gradient-text">{t.dashboard.title}</h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            {t.common.month} {state.month} • {t.dashboard.subtitle}
+          </p>
+        </div>
+        {onOpenSettings && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onOpenSettings}
+            className="w-10 h-10 rounded-xl"
+            title={t.dashboard.settings || 'Settings'}
+          >
+            <Settings className="w-5 h-5" />
+          </Button>
+        )}
       </div>
 
       {/* Income Card */}
@@ -176,8 +192,15 @@ export function Dashboard({ state }: DashboardProps) {
         </div>
       </div>
 
+      {/* Budget Alerts */}
+      {state.restrictions && (
+        <div className="animate-fade-in" style={{ animationDelay: '500ms' }}>
+          <BudgetAlerts restrictions={state.restrictions} />
+        </div>
+      )}
+
       {/* Educational Notice */}
-      <div className="glass-card p-4 animate-fade-in" style={{ animationDelay: '500ms' }}>
+      <div className="glass-card p-4 animate-fade-in" style={{ animationDelay: '600ms' }}>
         <div className="flex gap-3">
           <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
             <Sparkles className="w-4 h-4 text-primary" />
