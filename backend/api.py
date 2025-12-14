@@ -1,154 +1,181 @@
 """
-FastAPI Backend for Budget Simulator
-Provides AI Financial Advisor API endpoint
+FastAPI Backend for Budget Simulator + Telegram Bot
+- Telegram webhook endpoint: /telegram/webhook
+- AI Financial Advisor endpoint: /api/financial-advisor (streaming)
+- Tri-language (en/ru/uz) auto-detect for bot replies
 """
+
 import os
+import re
+import json
+import hmac
+import time
+import hashlib
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, AsyncIterator
+
+import httpx
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
-import httpx
-import json
-from dotenv import load_dotenv
 
-# Google Gemini imports
+# Google Gemini imports (optional)
 try:
     from google import genai
     GEMINI_AVAILABLE = True
 except ImportError:
     GEMINI_AVAILABLE = False
 
-# Load environment variables
+# -------------------------------------------------------------------
+# Load env + logging
+# -------------------------------------------------------------------
 load_dotenv()
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("budget-buddy-api")
 
+# -------------------------------------------------------------------
 # Configuration
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-# Optional: Use Google Gemini instead of OpenAI
-USE_GEMINI = os.getenv('USE_GEMINI', 'false').lower() == 'true'
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+# -------------------------------------------------------------------
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+USE_GEMINI = os.getenv("USE_GEMINI", "false").lower() == "true"
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+FRONTEND_URL = os.getenv("FRONTEND_URL", "*")
+
+if not TELEGRAM_BOT_TOKEN:
+    logger.warning("TELEGRAM_BOT_TOKEN is not set. Telegram bot will not work.")
 
 if not OPENAI_API_KEY and not (USE_GEMINI and GEMINI_API_KEY):
-    logger.warning("No AI API key set - AI features will not work. Set OPENAI_API_KEY or (USE_GEMINI=true and GEMINI_API_KEY)")
+    logger.warning(
+        "No AI API key set - AI features will not work. "
+        "Set OPENAI_API_KEY or (USE_GEMINI=true and GEMINI_API_KEY)"
+    )
 
-# Initialize FastAPI app
-app = FastAPI(title="Budget Simulator API", version="1.0.0")
+# -------------------------------------------------------------------
+# FastAPI app
+# -------------------------------------------------------------------
+app = FastAPI(title="Budget Buddy API", version="1.1.0")
 
-# CORS configuration
-FRONTEND_URL = os.getenv('FRONTEND_URL', '*')
-ALLOWED_ORIGINS = [FRONTEND_URL] if FRONTEND_URL != '*' else ["*"]
-
+allowed_origins = [FRONTEND_URL] if FRONTEND_URL != "*" else ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# System prompts for Financial AI Assistant
-SYSTEM_PROMPTS = {
-    'en': """You are a friendly and helpful personal financial assistant. You help users track income and expenses, set financial goals, and manage their finances through an educational budget simulator app.
+# -------------------------------------------------------------------
+# Language detection + translations (EN/RU/UZ-Latin)
+# -------------------------------------------------------------------
+CYRILLIC_RE = re.compile(r"[\u0400-\u04FF]")  # ru/cyrillic
 
-Your personality:
-- Friendly, warm, and approachable - like a trusted friend
-- Patient and encouraging, never judgmental
-- Clear and simple in your explanations
-- Proactive in offering helpful suggestions
+UZ_LATIN_HINTS = ["o'", "g'", "sh", "ch", "yo", "ya", "yu", "q", "x", "o‘", "g‘"]
+EN_HINTS = ["the", "and", "spent", "income", "salary", "coffee", "taxi", "rent"]
 
-Your capabilities:
-- Help users understand where their money goes
-- Track and analyze income and expenses
-- Set and work towards financial goals
-- Provide budgeting tips and strategies
-- Explain financial concepts in simple terms
-- Offer personalized advice based on their situation
 
-Important context:
-- This is an educational simulator - all amounts are virtual
-- The user is practicing financial management skills
-- Focus on teaching good financial habits
-- Be supportive and educational
+def detect_lang(text: str) -> str:
+    t = (text or "").strip()
+    if not t:
+        return "en"
+    if CYRILLIC_RE.search(t):
+        return "ru"
+    low = t.lower()
+    if any(h in low for h in UZ_LATIN_HINTS):
+        return "uz"
+    # weak english detection
+    if any(h in low.split() for h in EN_HINTS):
+        return "en"
+    # for your audience, Uzbek is a reasonable default
+    return "uz"
 
-When users ask questions or need help:
-- Give clear, actionable advice
-- Use their current financial data to personalize responses
-- Suggest practical steps they can take
-- Keep responses conversational and friendly (2-4 paragraphs)
-- Ask follow-up questions to better understand their needs
 
-Remember: You're here to help them learn and improve their financial skills, not just analyze numbers.""",
-
-    'ru': """Вы — дружелюбный и полезный персональный финансовый помощник. Вы помогаете пользователям отслеживать доходы и расходы, ставить финансовые цели и управлять финансами через обучающее приложение-симулятор бюджета.
-
-Ваша личность:
-- Дружелюбный, тёплый и доступный — как надёжный друг
-- Терпеливый и ободряющий, никогда не осуждающий
-- Ясный и простой в объяснениях
-- Проактивный в предложении полезных советов
-
-Ваши возможности:
-- Помогать пользователям понимать, куда уходят их деньги
-- Отслеживать и анализировать доходы и расходы
-- Ставить и работать над финансовыми целями
-- Предоставлять советы по бюджетированию
-- Объяснять финансовые концепции простым языком
-- Давать персональные советы на основе их ситуации
-
-Важно:
-- Это образовательный симулятор — все суммы виртуальные
-- Пользователь практикует навыки управления финансами
-- Сосредоточьтесь на обучении хорошим финансовым привычкам
-- Будьте поддерживающим и образовательным
-
-Когда пользователи задают вопросы или нуждаются в помощи:
-- Давайте чёткие, практичные советы
-- Используйте их текущие финансовые данные для персонализации
-- Предлагайте конкретные шаги
-- Держите ответы разговорными и дружелюбными (2-4 абзаца)
-- Задавайте уточняющие вопросы для лучшего понимания
-
-Помните: Вы здесь, чтобы помочь им учиться и улучшать финансовые навыки, а не просто анализировать числа.""",
-
-    'uz': """Siz do'stona va foydali shaxsiy moliyaviy yordamchisiz. Siz foydalanuvchilarga daromadlar va xarajatlarni kuzatish, moliyaviy maqsadlar qo'yish va moliyani boshqarishda yordam berasiz - bu ta'limiy byudjet simulyatori ilovasi orqali.
-
-Sizning shaxsingiz:
-- Do'stona, iliq va qulay - ishonchli do'st kabi
-- Sabrli va rag'batlantiruvchi, hech qachon tanqid qilmaydigan
-- Tushuntirishlarda aniq va oddiy
-- Foydali takliflarni taklif qilishda faol
-
-Sizning qobiliyatlaringiz:
-- Foydalanuvchilarga pulingiz qayerga ketayotganini tushunishda yordam berish
-- Daromadlar va xarajatlarni kuzatish va tahlil qilish
-- Moliyaviy maqsadlar qo'yish va ularga erishish
-- Byudjetlash bo'yicha maslahatlar va strategiyalar berish
-- Moliyaviy tushunchalarni oddiy tilda tushuntirish
-- Ularning vaziyatiga asoslangan shaxsiy maslahatlar taklif qilish
-
-Muhim kontekst:
-- Bu ta'limiy simulyator - barcha summalar virtual
-- Foydalanuvchi moliyaviy boshqaruv ko'nikmalarini mashq qilmoqda
-- Yaxshi moliyaviy odatlarni o'rgatishga e'tibor qarating
-- Qo'llab-quvvatlovchi va o'rgatuvchi bo'ling
-
-Foydalanuvchilar savol berganida yoki yordamga muhtoj bo'lganda:
-- Aniq, amaliy maslahatlar bering
-- Javoblarni shaxsiylashtirish uchun ularning joriy moliyaviy ma'lumotlaridan foydalaning
-- Ular amalga oshirishi mumkin bo'lgan amaliy qadamlar taklif qiling
-- Javoblarni suhbatdosh va do'stona saqlang (2-4 paragraf)
-- Ehtiyojlarini yaxshiroq tushunish uchun kuzatuvchi savollar bering
-
-Esda tuting: Siz bu yerda ularni o'qitish va moliyaviy ko'nikmalarini yaxshilashga yordam berish uchunsiz, faqat raqamlarni tahlil qilish uchun emas."""
+MESSAGES = {
+    "start": {
+        "en": "👋 Hi! I’m your Budget Buddy.\n\nSend an expense like: <b>Coffee 50000</b>\nOr income like: <b>Salary 5000000</b>\n\nYou can also open the Mini App from the menu button.",
+        "ru": "👋 Привет! Я ваш Budget Buddy.\n\nОтправьте расход: <b>Кофе 50000</b>\nИли доход: <b>Зарплата 5000000</b>\n\nМини-приложение откроется через кнопку меню.",
+        "uz": "👋 Salom! Men sizning Budget Buddy yordamchingiz.\n\nXarajat: <b>Kofe 50000</b>\nDaromad: <b>Maosh 5000000</b>\n\nMini ilovani menyu tugmasidan oching.",
+    },
+    "help": {
+        "en": "Try:\n• <b>Coffee 50000</b>\n• <b>Taxi 30000</b>\n• <b>Salary 5000000</b>\n\n(Next step: we’ll save these into database.)",
+        "ru": "Попробуйте:\n• <b>Кофе 50000</b>\n• <b>Такси 30000</b>\n• <b>Зарплата 5000000</b>\n\n(Следующий шаг: будем сохранять в базу.)",
+        "uz": "Sinab ko‘ring:\n• <b>Kofe 50000</b>\n• <b>Taksi 30000</b>\n• <b>Maosh 5000000</b>\n\n(Keyingi qadam: bazaga saqlaymiz.)",
+    },
+    "no_token": {
+        "en": "⚠️ Bot token is not configured on the server.",
+        "ru": "⚠️ Токен бота не настроен на сервере.",
+        "uz": "⚠️ Serverda bot token sozlanmagan.",
+    },
+    "ok": {"en": "✅ OK", "ru": "✅ ОК", "uz": "✅ OK"},
 }
 
 
-# Pydantic models
+def t(key: str, lang: str) -> str:
+    return MESSAGES.get(key, {}).get(lang) or MESSAGES.get(key, {}).get("en") or ""
+
+
+# -------------------------------------------------------------------
+# Telegram helpers
+# -------------------------------------------------------------------
+TELEGRAM_API = "https://api.telegram.org"
+
+
+async def tg_send_message(chat_id: int, text: str, parse_mode: str = "HTML") -> None:
+    """
+    Sends a message via Telegram Bot API.
+    """
+    if not TELEGRAM_BOT_TOKEN:
+        logger.error("TELEGRAM_BOT_TOKEN missing; cannot send Telegram messages.")
+        return
+
+    url = f"{TELEGRAM_API}/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode}
+
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        r = await client.post(url, json=payload)
+        if not r.is_success:
+            logger.error(f"Telegram sendMessage failed: {r.status_code} {r.text}")
+
+
+# -------------------------------------------------------------------
+# AI Assistant prompts
+# -------------------------------------------------------------------
+SYSTEM_PROMPTS = {
+    "en": """You are a friendly and helpful personal financial assistant. You help users track income and expenses, set financial goals, and manage their finances through an educational budget simulator app.
+
+Your personality:
+- Friendly, warm, approachable
+- Patient and encouraging
+- Clear and simple
+- Proactive
+
+Important context:
+- This is an educational simulator - all amounts are virtual
+- Teach good financial habits
+- Keep responses conversational (2-4 paragraphs)
+""",
+    "ru": """Вы — дружелюбный и полезный персональный финансовый помощник. Вы помогаете пользователям отслеживать доходы и расходы, ставить финансовые цели и управлять финансами через обучающее приложение-симулятор бюджета.
+
+Важно:
+- Это образовательный симулятор — суммы виртуальные
+- Обучайте хорошим финансовым привычкам
+- Ответ 2–4 абзаца, дружелюбно
+""",
+    "uz": """Siz do'stona va foydali shaxsiy moliyaviy yordamchisiz. Siz foydalanuvchilarga daromad va xarajatlarni kuzatish, maqsad qo‘yish va moliyani boshqarishda yordam berasiz (ta’limiy byudjet simulyatori).
+
+Muhim:
+- Bu ta’limiy simulyator — summalar virtual
+- Yaxshi moliyaviy odatlarni o‘rgating
+- Javob 2–4 paragraf, do‘stona uslubda
+""",
+}
+
+
 class UserState(BaseModel):
     month: int
     virtualIncome: float
@@ -161,212 +188,196 @@ class UserState(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
-    language: str = 'en'
+    language: str = "en"
     userState: Optional[UserState] = None
 
 
 def build_context_message(user_state: Optional[UserState], language: str) -> str:
-    """Build context message from user state"""
     if not user_state:
         return ""
-    
-    if language == 'ru':
+
+    if language == "ru":
         return f"""
 
-Текущее состояние пользователя:
+Текущее состояние:
 - Месяц: {user_state.month}
 - Виртуальный доход: {user_state.virtualIncome}
-- Текущий баланс: {user_state.currentBalance}
+- Баланс: {user_state.currentBalance}
 - Сбережения: {user_state.savings}
 - Долг: {user_state.debt}
-- Индекс стабильности: {user_state.stabilityIndex}%
-- Уровень стресса: {user_state.stressLevel}%"""
-    elif language == 'uz':
+- Стабильность: {user_state.stabilityIndex}%
+- Стресс: {user_state.stressLevel}%"""
+    if language == "uz":
         return f"""
 
-Foydalanuvchining joriy holati:
+Joriy holat:
 - Oy: {user_state.month}
 - Virtual daromad: {user_state.virtualIncome}
-- Joriy balans: {user_state.currentBalance}
-- Jamg'armalar: {user_state.savings}
+- Balans: {user_state.currentBalance}
+- Jamg'arma: {user_state.savings}
 - Qarz: {user_state.debt}
-- Barqarorlik indeksi: {user_state.stabilityIndex}%
-- Stress darajasi: {user_state.stressLevel}%"""
-    else:
-        return f"""
+- Barqarorlik: {user_state.stabilityIndex}%
+- Stress: {user_state.stressLevel}%"""
 
-User's current state:
+    return f"""
+
+User state:
 - Month: {user_state.month}
 - Virtual income: {user_state.virtualIncome}
-- Current balance: {user_state.currentBalance}
+- Balance: {user_state.currentBalance}
 - Savings: {user_state.savings}
 - Debt: {user_state.debt}
-- Stability index: {user_state.stabilityIndex}%
-- Stress level: {user_state.stressLevel}%"""
+- Stability: {user_state.stabilityIndex}%
+- Stress: {user_state.stressLevel}%"""
 
 
-async def stream_ai_response(request: ChatRequest):
-    """Stream AI response from OpenAI or Google Gemini"""
-    if not OPENAI_API_KEY and not (USE_GEMINI and GEMINI_API_KEY):
-        raise HTTPException(status_code=500, detail="AI service not configured. Set OPENAI_API_KEY or GEMINI_API_KEY")
-    
-    lang = request.language or 'en'
-    system_prompt = SYSTEM_PROMPTS.get(lang, SYSTEM_PROMPTS['en'])
-    context_message = build_context_message(request.userState, lang)
-    
-    # Prepare messages for AI
+async def stream_openai(messages: list[dict]) -> AsyncIterator[bytes]:
+    if not OPENAI_API_KEY:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured")
+
+    api_url = "https://api.openai.com/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
+    payload = {"model": "gpt-4o-mini", "messages": messages, "stream": True}
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        async with client.stream("POST", api_url, headers=headers, json=payload) as resp:
+            if resp.status_code == 429:
+                raise HTTPException(status_code=429, detail="Rate limit exceeded. Try later.")
+            if resp.status_code == 401:
+                raise HTTPException(status_code=401, detail="Invalid OPENAI_API_KEY.")
+            if not resp.is_success:
+                body = await resp.aread()
+                logger.error(f"OpenAI error: {resp.status_code} {body}")
+                raise HTTPException(status_code=resp.status_code, detail="OpenAI API error")
+
+            async for chunk in resp.aiter_bytes():
+                yield chunk
+
+
+async def stream_gemini(messages: list[dict]) -> AsyncIterator[str]:
+    if not (USE_GEMINI and GEMINI_API_KEY):
+        raise HTTPException(status_code=500, detail="Gemini not configured")
+    if not GEMINI_AVAILABLE:
+        raise HTTPException(status_code=500, detail="google-genai not installed (pip install google-genai)")
+
+    client = genai.Client(api_key=GEMINI_API_KEY)
+
+    system_prompt = messages[0]["content"] if messages and messages[0]["role"] == "system" else ""
+    user_message = messages[-1]["content"] if messages else ""
+    content = f"{system_prompt}\n\n{user_message}".strip()
+
+    stream = await client.aio.models.generate_content_stream(
+        model="gemini-2.5-flash",
+        contents=content,
+        config={"temperature": 0.7},
+    )
+
+    async for chunk in stream:
+        if getattr(chunk, "text", None):
+            # emit as SSE
+            chunk_data = {"choices": [{"delta": {"content": chunk.text}}]}
+            yield f"data: {json.dumps(chunk_data)}\n\n"
+
+    yield "data: [DONE]\n\n"
+
+
+async def stream_ai_response(req: ChatRequest) -> StreamingResponse:
+    lang = (req.language or "en").lower()
+    if lang not in ("en", "ru", "uz"):
+        lang = "en"
+
+    system_prompt = SYSTEM_PROMPTS.get(lang, SYSTEM_PROMPTS["en"])
+    context = build_context_message(req.userState, lang)
+
     messages = [
-        {"role": "system", "content": system_prompt + context_message},
-        {"role": "user", "content": request.message}
+        {"role": "system", "content": system_prompt + context},
+        {"role": "user", "content": req.message},
     ]
-    
-    # Choose AI service
+
     if USE_GEMINI and GEMINI_API_KEY:
-        # Use Google Gemini with official SDK
-        if not GEMINI_AVAILABLE:
-            raise HTTPException(status_code=500, detail="google-genai package not installed. Run: pip install google-genai")
-        
-        try:
-            # Initialize Gemini client
-            client = genai.Client(api_key=GEMINI_API_KEY)
-            
-            # Combine system prompt and user message
-            system_prompt = messages[0]["content"] if messages[0]["role"] == "system" else ""
-            user_message = messages[-1]["content"] if messages[-1]["role"] == "user" else request.message
-            
-            # Prepare content (system prompt + user message)
-            content = f"{system_prompt}\n\n{user_message}" if system_prompt else user_message
-            
-            # Generate response with streaming (using async interface)
-            async def generate():
-                try:
-                    # Use async interface for FastAPI compatibility
-                    stream = await client.aio.models.generate_content_stream(
-                        model="gemini-2.5-flash",
-                        contents=content,
-                        config={
-                            "temperature": 0.7,
-                        }
-                    )
-                    
-                    # Stream response chunks
-                    async for chunk in stream:
-                        if hasattr(chunk, 'text') and chunk.text:
-                            # Convert to OpenAI SSE format
-                            chunk_data = {
-                                "choices": [{
-                                    "delta": {"content": chunk.text}
-                                }]
-                            }
-                            yield f"data: {json.dumps(chunk_data)}\n\n"
-                    
-                    # End of stream
-                    yield "data: [DONE]\n\n"
-                except Exception as e:
-                    logger.error(f"Error in Gemini streaming: {e}")
-                    error_chunk = {
-                        "choices": [{
-                            "delta": {"content": f"\n\nError: {str(e)}"}
-                        }]
-                    }
-                    yield f"data: {json.dumps(error_chunk)}\n\n"
-                    yield "data: [DONE]\n\n"
-            
-            return StreamingResponse(
-                generate(),
-                media_type="text/event-stream",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "Connection": "keep-alive",
-                }
-            )
-            
-        except Exception as e:
-            logger.error(f"Error calling Gemini API: {e}")
-            raise HTTPException(status_code=500, detail=f"Gemini API error: {str(e)}")
-    else:
-        # Use OpenAI
-        if not OPENAI_API_KEY:
-            raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured")
-        
-        api_url = "https://api.openai.com/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": "gpt-4o-mini",  # Cost-effective model, can change to gpt-4, gpt-3.5-turbo, etc.
-            "messages": messages,
-            "stream": True,
-        }
-        
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            try:
-                async with client.stream(
-                    "POST",
-                    api_url,
-                    headers=headers,
-                    json=payload,
-                ) as response:
-                    if response.status_code == 429:
-                        raise HTTPException(status_code=429, detail="Rate limit exceeded. Please try again later.")
-                    if response.status_code == 401:
-                        raise HTTPException(status_code=401, detail="Invalid API key. Please check your OPENAI_API_KEY.")
-                    if not response.is_success:
-                        error_text = await response.aread()
-                        logger.error(f"OpenAI API error: {response.status_code} - {error_text}")
-                        raise HTTPException(status_code=response.status_code, detail=f"OpenAI API error: {response.status_code}")
-                
-                async def generate():
-                    async for chunk in response.aiter_bytes():
-                        yield chunk
-                
-                return StreamingResponse(
-                    generate(),
-                    media_type="text/event-stream",
-                    headers={
-                        "Cache-Control": "no-cache",
-                        "Connection": "keep-alive",
-                    }
-                )
-                except httpx.TimeoutException:
-                    raise HTTPException(status_code=504, detail="AI service timeout")
-                except Exception as e:
-                    logger.error(f"Error streaming AI response: {e}")
-                    raise HTTPException(status_code=500, detail=str(e))
+        async def gen():
+            async for sse in stream_gemini(messages):
+                yield sse
+        return StreamingResponse(
+            gen(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+        )
+
+    # OpenAI streaming
+    return StreamingResponse(
+        stream_openai(messages),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+    )
 
 
+# -------------------------------------------------------------------
+# API endpoints
+# -------------------------------------------------------------------
 @app.post("/api/financial-advisor")
-async def financial_advisor(request: ChatRequest):
-    """
-    Financial Advisor AI endpoint
-    Returns streaming response from Financial AI Assistant
-    """
-    logger.info(f"Received chat request in language: {request.language}")
-    return await stream_ai_response(request)
+async def financial_advisor(req: ChatRequest):
+    logger.info(f"AI request lang={req.language}")
+    return await stream_ai_response(req)
 
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
-    return {"status": "ok", "ai_configured": bool(OPENAI_API_KEY or (USE_GEMINI and GEMINI_API_KEY))}
+    return {"status": "ok", "telegram_configured": bool(TELEGRAM_BOT_TOKEN), "ai_configured": bool(OPENAI_API_KEY or (USE_GEMINI and GEMINI_API_KEY))}
 
 
 @app.get("/")
 async def root():
-    """Root endpoint"""
     return {
-        "message": "Budget Simulator API",
-        "version": "1.0.0",
+        "message": "Budget Buddy API",
+        "version": "1.1.0",
         "endpoints": {
             "health": "/health",
-            "financial_advisor": "/api/financial-advisor"
-        }
+            "financial_advisor": "/api/financial-advisor",
+            "telegram_webhook": "/telegram/webhook",
+        },
     }
+
+
+# -------------------------------------------------------------------
+# Telegram webhook endpoint
+# -------------------------------------------------------------------
+@app.post("/telegram/webhook")
+async def telegram_webhook(payload: Dict[str, Any]):
+    """
+    Minimal Telegram update handler:
+    - replies to /start
+    - replies with help for any other message
+    - auto language detection by message text
+    """
+    if not TELEGRAM_BOT_TOKEN:
+        # We can't reply to Telegram without token
+        return JSONResponse({"ok": False, "error": "TELEGRAM_BOT_TOKEN missing"}, status_code=500)
+
+    try:
+        message = payload.get("message") or payload.get("edited_message")
+        if not message:
+            # could be callback_query, inline_query, etc. ignore for now
+            return {"ok": True}
+
+        chat_id = message["chat"]["id"]
+        text = message.get("text") or ""
+        lang = detect_lang(text)
+
+        logger.info(f"Telegram msg chat_id={chat_id} text={text!r} lang={lang}")
+
+        if text.strip().lower() in ("/start", "start"):
+            await tg_send_message(chat_id, t("start", lang))
+        else:
+            await tg_send_message(chat_id, t("help", lang))
+
+        return {"ok": True}
+
+    except Exception as e:
+        logger.exception(f"telegram_webhook error: {e}")
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-
-
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8000")))
