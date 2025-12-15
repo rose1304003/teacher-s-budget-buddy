@@ -8,15 +8,12 @@ FastAPI Backend for Budget Simulator + Telegram Bot
 import os
 import re
 import json
-import hmac
-import time
-import hashlib
 import logging
 from typing import Optional, Dict, Any, AsyncIterator
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
@@ -88,10 +85,8 @@ def detect_lang(text: str) -> str:
     low = t.lower()
     if any(h in low for h in UZ_LATIN_HINTS):
         return "uz"
-    # weak english detection
     if any(h in low.split() for h in EN_HINTS):
         return "en"
-    # for your audience, Uzbek is a reasonable default
     return "uz"
 
 
@@ -112,6 +107,12 @@ MESSAGES = {
         "uz": "⚠️ Serverda bot token sozlanmagan.",
     },
     "ok": {"en": "✅ OK", "ru": "✅ ОК", "uz": "✅ OK"},
+    "next_step": {
+        "en": "(Next step: we’ll save these into database.)",
+        "ru": "(Следующий шаг: будем сохранять в базу.)",
+        "uz": "(Keyingi qadam: bazaga saqlaymiz.)",
+    },
+    "try_title": {"en": "Try:", "ru": "Попробуйте:", "uz": "Sinab ko‘ring:"},
 }
 
 
@@ -126,9 +127,6 @@ TELEGRAM_API = "https://api.telegram.org"
 
 
 async def tg_send_message(chat_id: int, text: str, parse_mode: str = "HTML") -> None:
-    """
-    Sends a message via Telegram Bot API.
-    """
     if not TELEGRAM_BOT_TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN missing; cannot send Telegram messages.")
         return
@@ -250,6 +248,7 @@ async def stream_openai(messages: list[dict]) -> AsyncIterator[bytes]:
                 logger.error(f"OpenAI error: {resp.status_code} {body}")
                 raise HTTPException(status_code=resp.status_code, detail="OpenAI API error")
 
+            # OpenAI streaming is already SSE-like ("data: ...\n\n"), so we pass it through.
             async for chunk in resp.aiter_bytes():
                 yield chunk
 
@@ -274,7 +273,6 @@ async def stream_gemini(messages: list[dict]) -> AsyncIterator[str]:
 
     async for chunk in stream:
         if getattr(chunk, "text", None):
-            # emit as SSE
             chunk_data = {"choices": [{"delta": {"content": chunk.text}}]}
             yield f"data: {json.dumps(chunk_data)}\n\n"
 
@@ -304,7 +302,6 @@ async def stream_ai_response(req: ChatRequest) -> StreamingResponse:
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
         )
 
-    # OpenAI streaming
     return StreamingResponse(
         stream_openai(messages),
         media_type="text/event-stream",
@@ -323,7 +320,11 @@ async def financial_advisor(req: ChatRequest):
 
 @app.get("/health")
 async def health_check():
-    return {"status": "ok", "telegram_configured": bool(TELEGRAM_BOT_TOKEN), "ai_configured": bool(OPENAI_API_KEY or (USE_GEMINI and GEMINI_API_KEY))}
+    return {
+        "status": "ok",
+        "telegram_configured": bool(TELEGRAM_BOT_TOKEN),
+        "ai_configured": bool(OPENAI_API_KEY or (USE_GEMINI and GEMINI_API_KEY)),
+    }
 
 
 @app.get("/")
@@ -340,37 +341,83 @@ async def root():
 
 
 # -------------------------------------------------------------------
-# Telegram webhook endpoint
+# Parsing user entries (Telegram bot)
 # -------------------------------------------------------------------
+def parse_entries(text: str):
+    """
+    Extract pairs like:
+      Kofe 25000
+      Kofe: 25000
+      Kofe - 25000
+    Works with multi-line text too.
+    """
+    if not text:
+        return []
+
+    # remove commands at the beginning: /progress, /start, /help, etc.
+    cleaned = re.sub(r"^/\w+\s*", "", text.strip())
+
+    items = []
+    for line in cleaned.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        # name + optional ":" or "-" + amount
+        m = re.match(r"(.+?)\s*[:\-]?\s+(\d[\d\s]*)$", line)
+        if not m:
+            continue
+
+        name = m.group(1).strip()
+        amount = int(m.group(2).replace(" ", ""))  # "15 000 000" -> 15000000
+        items.append((name, amount))
+
+    return items
+
+
 @app.post("/telegram/webhook")
 async def telegram_webhook(payload: Dict[str, Any]):
-    """
-    Minimal Telegram update handler:
-    - replies to /start
-    - replies with help for any other message
-    - auto language detection by message text
-    """
     if not TELEGRAM_BOT_TOKEN:
-        # We can't reply to Telegram without token
         return JSONResponse({"ok": False, "error": "TELEGRAM_BOT_TOKEN missing"}, status_code=500)
 
     try:
         message = payload.get("message") or payload.get("edited_message")
         if not message:
-            # could be callback_query, inline_query, etc. ignore for now
             return {"ok": True}
 
         chat_id = message["chat"]["id"]
         text = message.get("text") or ""
         lang = detect_lang(text)
+        low = text.strip().lower()
 
         logger.info(f"Telegram msg chat_id={chat_id} text={text!r} lang={lang}")
 
-        if text.strip().lower() in ("/start", "start"):
+        # Commands
+        if low in ("/start", "start"):
             await tg_send_message(chat_id, t("start", lang))
-        else:
-            await tg_send_message(chat_id, t("help", lang))
+            return {"ok": True}
 
+        if low.startswith("/help"):
+            await tg_send_message(chat_id, t("help", lang))
+            return {"ok": True}
+
+        # Parse what user entered (works for /progress too)
+        entries = parse_entries(text)
+
+        if entries:
+            lines = "\n".join([f"• <b>{name} {amount}</b>" for name, amount in entries])
+
+            reply = (
+                f"{t('try_title', lang)}\n"
+                f"{lines}\n\n"
+                f"{t('next_step', lang)}"
+            )
+
+            await tg_send_message(chat_id, reply)
+            return {"ok": True}
+
+        # If nothing matched, show help
+        await tg_send_message(chat_id, t("help", lang))
         return {"ok": True}
 
     except Exception as e:
@@ -381,5 +428,3 @@ async def telegram_webhook(payload: Dict[str, Any]):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8080")))
-
-
