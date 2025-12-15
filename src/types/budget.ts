@@ -79,3 +79,27 @@ export interface AIMessage {
   content: string;
   timestamp: Date;
 }
+
+export type CategoryType = "expense" | "income";
+
+export interface Category {
+  id: string;
+  user_id: string;
+  name: string;
+  type: CategoryType;
+  icon?: string | null;
+  color?: string | null;
+  is_default: boolean;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface Allocation {
+  id: string;
+  user_id: string;
+  month: string;       // YYYY-MM
+  category_id: string;
+  percent: number;
+  updated_at: string;
+}
+
